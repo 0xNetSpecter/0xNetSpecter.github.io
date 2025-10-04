@@ -1,7 +1,12 @@
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 export class Character {
-  public mesh: THREE.Mesh;
+  public mixer?: THREE.AnimationMixer;
+  public actions: Record<string, THREE.AnimationAction> = {};
+  public currentAction?: THREE.AnimationAction;
+
+  public mesh: THREE.Object3D | null = null;
   public speed = 6;
   public damping = 10;
 
@@ -10,16 +15,42 @@ export class Character {
   private _onKeyDown: (e: KeyboardEvent) => void;
   private _onKeyUp: (e: KeyboardEvent) => void;
 
-  constructor() {
-    const geo = new THREE.BoxGeometry(1, 1, 1);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x55ccff,
-      metalness: 0,
-      roughness: 1,
-    });
-    this.mesh = new THREE.Mesh(geo, mat);
-    this.mesh.position.set(0, 0.5, 0);
-    this.mesh.castShadow = true;
+  private _isRunning = false;
+
+  private ANIM_MAP = {
+    idle: "Idle",
+    walk: "Walk",
+    run: "Run",
+    attack: "Dagger_Attack",
+    hit: "RecieveHit",
+    death: "Death",
+  };
+
+  constructor(scene) {
+    const loader = new GLTFLoader();
+
+    loader.load(
+      "/assets/Character.glb",
+      (gltf) => {
+        this.mesh = gltf.scene;
+        this.mesh.position.set(0, 0, 0);
+        this.mesh.scale.setScalar(1);
+        this.mesh.traverse((obj) => {
+          obj.castShadow = true;
+          obj.receiveShadow = true;
+        });
+        scene.add(this.mesh);
+
+        this.mixer = new THREE.AnimationMixer(this.mesh);
+        gltf.animations.forEach((clip) => {
+          this.actions[clip.name] = this.mixer!.clipAction(clip);
+        });
+
+        this.play(this.ANIM_MAP.idle);
+      },
+      undefined,
+      (err) => console.error("Ошибка загрузки персонажа:", err)
+    );
 
     this._onKeyDown = (e: KeyboardEvent) => {
       switch (e.code) {
@@ -38,6 +69,10 @@ export class Character {
         case "KeyD":
         case "ArrowRight":
           this._input.right = true;
+          break;
+        case "ShiftLeft":
+        case "ShiftRight":
+          this._isRunning = true;
           break;
       }
     };
@@ -60,6 +95,10 @@ export class Character {
         case "ArrowRight":
           this._input.right = false;
           break;
+        case "ShiftLeft":
+        case "ShiftRight":
+          this._isRunning = false;
+          break;
       }
     };
 
@@ -68,14 +107,19 @@ export class Character {
   }
 
   update(dt: number) {
+    if (!this.mesh) return;
+
     this._dir.set(
       (this._input.right ? 1 : 0) - (this._input.left ? 1 : 0),
       0,
       (this._input.down ? 1 : 0) - (this._input.up ? 1 : 0)
     );
 
-    if (this._dir.lengthSq() > 0) {
-      this._dir.normalize().multiplyScalar(this.speed * dt);
+    const isMoving = this._dir.lengthSq() > 0;
+
+    if (isMoving) {
+      const moveSpeed = this._isRunning ? this.speed * 2 : this.speed;
+      this._dir.normalize().multiplyScalar(moveSpeed * dt);
       this.mesh.position.add(this._dir);
 
       const targetYaw = Math.atan2(this._dir.x, this._dir.z);
@@ -83,7 +127,31 @@ export class Character {
         new THREE.Euler(0, targetYaw, 0)
       );
       this.mesh.quaternion.slerp(q, 1 - Math.exp(-this.damping * dt));
+
+      if (this._isRunning) {
+        this.play(this.ANIM_MAP.run);
+      } else {
+        this.play(this.ANIM_MAP.walk);
+      }
+    } else {
+      this.play(this.ANIM_MAP.idle);
     }
+
+    if (this.mixer) this.mixer.update(dt);
+  }
+
+  play(name: string) {
+    if (!this.mixer || !this.actions[name]) return;
+
+    const next = this.actions[name];
+    if (this.currentAction === next) return;
+
+    if (this.currentAction) {
+      this.currentAction.fadeOut(0.15);
+    }
+
+    this.currentAction = next;
+    this.currentAction.reset().fadeIn(0.15).play();
   }
 
   dispose() {

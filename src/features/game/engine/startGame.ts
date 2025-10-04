@@ -2,34 +2,18 @@ import * as THREE from "three";
 import { createWorld } from "./world";
 import { Character } from "./character";
 
-export function startGame(canvas) {
+export function startGame(canvas: HTMLElement) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x808080);
 
-  const w = canvas.clientWidth;
-  const h = canvas.clientHeight;
-
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(canvas.clientWidth, canvas.clientHeight);
   canvas.appendChild(renderer.domElement);
 
-  function resize() {
-    const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
-    renderer.setSize(w, h);
-    camera.left = (-viewSize * (w / h)) / 2;
-    camera.right = (viewSize * (w / h)) / 2;
-    camera.top = viewSize / 2;
-    camera.bottom = -viewSize / 2;
-    camera.updateProjectionMatrix();
-    createWorld(scene, w / h);
-  }
-
-  window.addEventListener("resize", resize);
-  createWorld(scene, w / h);
-
-  const ambient = new THREE.AmbientLight(0xcc66ff, 1.2);
+  const ambient = new THREE.AmbientLight(0xffffff, 1.2);
   scene.add(ambient);
+
   const viewSize = 40;
   const aspect = canvas.clientWidth / canvas.clientHeight;
   const camera = new THREE.OrthographicCamera(
@@ -44,9 +28,9 @@ export function startGame(canvas) {
   camera.lookAt(0, 0, 0);
   renderer.shadowMap.enabled = true;
 
-  resize();
-  const hero = new Character();
-  scene.add(hero.mesh);
+  createWorld(scene, aspect);
+
+  const hero = new Character(scene);
 
   const clock = new THREE.Clock();
 
@@ -54,12 +38,26 @@ export function startGame(canvas) {
     const dt = clock.getDelta();
     hero.update(dt);
 
-    // const desired = new THREE.Vector3()
-    //   .copy(hero.mesh.position)
-    //   .add(new THREE.Vector3(0, 12, 8));
-    camera.position.copy(hero.mesh.position).add(new THREE.Vector3(0, 20, 15));
-    camera.lookAt(hero.mesh.position);
+    if (hero.mesh) {
+      camera.position
+        .copy(hero.mesh.position)
+        .add(new THREE.Vector3(0, 20, 15));
+      camera.lookAt(hero.mesh.position);
+    }
 
     renderer.render(scene, camera);
+  });
+
+  window.addEventListener("resize", () => {
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    const aspect = w / h;
+
+    camera.left = (-viewSize * aspect) / 2;
+    camera.right = (viewSize * aspect) / 2;
+    camera.top = viewSize / 2;
+    camera.bottom = -viewSize / 2;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
   });
 }
